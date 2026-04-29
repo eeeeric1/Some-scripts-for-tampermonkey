@@ -1,0 +1,7 @@
+(() => {
+  const audio = new Audio('https://www.myinstants.com/media/sounds/enrique.mp3');
+  document.addEventListener('click', () => {
+    audio.currentTime = 0;
+    audio.play();
+  });
+})();
