@@ -1,7 +1,22 @@
-(() => {
+// ==UserScript==
+// @name         ENRIQUE
+// @namespace    http://tampermonkey.net/
+// @version      2026-04-28
+// @description  try to take over the world!
+// @author       You
+// @match        https://*/*
+// @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    (() => {
   const audio = new Audio('https://www.myinstants.com/media/sounds/enrique.mp3');
   document.addEventListener('click', () => {
     audio.currentTime = 0;
     audio.play();
   });
+})();
 })();
