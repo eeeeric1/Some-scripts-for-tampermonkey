@@ -13,4 +13,5 @@
     'use strict';
 
     document.body.style.backgroundImage = "url(https://i.redd.it/ims06c64idb91.jpg)";
-})();  //to change image right click an image and press "copy image adress" and past it in the brakets after where it says url in this code
+})();  
+//to change image right click an image and press "copy image adress" and past it in the brakets after where it says url in this code
