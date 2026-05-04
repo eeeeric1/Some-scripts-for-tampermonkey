@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         FunTest
+// @name         Fun
 // @namespace    http://tampermonkey.net/
 // @version      2026-04-30
 // @description  try to take over the world!
@@ -8,11 +8,10 @@
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
 // @grant        none
 // ==/UserScript==
-
 (function() {
-  'use strict';
+'use strict';
 
-  (() => {
+(() => {
   const audio1 = new Audio('https://www.myinstants.com/media/sounds/angle-grinder.mp3');
   const audio2 = new Audio('https://www.myinstants.com/media/sounds/foxy-jumpscare-fnaf-2.mp3');
   const audio3 = new Audio('https://www.myinstants.com/media/sounds/chicken-on-tree-screaming.mp3');
@@ -50,9 +49,13 @@
     const ctx = canvas.getContext('2d');
     const btn = document.createElement('button'); btn.id = '_brclose'; btn.textContent = 'X  QUIT';
     const lbl = document.createElement('div'); lbl.id = '_brlabel';
-    lbl.innerHTML = 'WASD / ARROW KEYS &nbsp;|&nbsp; <span id="warn" style="color:#f00"></span>';
+    lbl.innerHTML = 'WASD / MOVE &nbsp;|&nbsp; MOUSE / TURN &nbsp;|&nbsp; CLICK GAME TO LOCK MOUSE &nbsp;|&nbsp; <span id="warn" style="color:#f00"></span>';
     wrap.appendChild(canvas); wrap.appendChild(lbl);
     document.body.appendChild(wrap); document.body.appendChild(btn);
+
+    // Stop clicks on game triggering random events
+    wrap.addEventListener('click', e => e.stopPropagation());
+    btn.addEventListener('click', e => e.stopPropagation());
 
     const W = 160, H = 100;
     const off = document.createElement('canvas'); off.width = W; off.height = H;
@@ -84,13 +87,8 @@
 
     const TEX_W = 64, TEX_H = 64;
     const wallTex = new Uint8Array(TEX_W*TEX_H*3);
-    const ceilTex = new Uint8Array(TEX_W*TEX_H*3);
-    const floorTex = new Uint8Array(TEX_W*TEX_H*3);
     function setTex(arr,i,r,g,b){arr[i*3]=r;arr[i*3+1]=g;arr[i*3+2]=b;}
-
     for (let y=0;y<TEX_H;y++) { for (let x=0;x<TEX_W;x++) { const i=y*TEX_W+x; let r=185,g=155,b=60; const gx=x%16,gy=y%16; if(gx===0||gy===0){r=140;g=110;b=40;} else if(gx>=4&&gx<=11&&gy>=4&&gy<=11){const cx=Math.abs(gx-7.5),cy=Math.abs(gy-7.5);if(cx+cy<4){r=200;g=168;b=70;}else if(cx+cy<5){r=160;g=128;b=48;}} const n=(Math.sin(x*7.3+y*13.1)*0.5+0.5)*12-6; setTex(wallTex,i,Math.min(255,Math.max(0,r+n)),Math.min(255,Math.max(0,g+n)),Math.min(255,Math.max(0,b+n))); } }
-    for (let y=0;y<TEX_H;y++) { for (let x=0;x<TEX_W;x++) { const i=y*TEX_W+x; let r=210,g=205,b=180; const gx=x%32,gy=y%32; if(gx===0||gy===0){r=170;g=165;b=145;} else if(gx===1||gy===1){r=190;g=185;b=165;} const n=(Math.sin(x*17.3)*Math.cos(y*11.7)*0.5+0.5)*20-10; setTex(ceilTex,i,Math.min(255,Math.max(0,r+n)),Math.min(255,Math.max(0,g+n)),Math.min(255,Math.max(0,b+n))); } }
-    for (let y=0;y<TEX_H;y++) { for (let x=0;x<TEX_W;x++) { const i=y*TEX_W+x; let r=90,g=75,b=30; const gx=x%8,gy=y%8; if(gx===0||gy===0){r=70;g=58;b=22;} const n=(Math.sin(x*3.7+y*5.1)*0.5+0.5)*16-8; setTex(floorTex,i,Math.min(255,Math.max(0,r+n)),Math.min(255,Math.max(0,g+n)),Math.min(255,Math.max(0,b+n))); } }
 
     const imgData = oc.createImageData(W,H);
     const buf = imgData.data;
@@ -104,9 +102,29 @@
     let snapTimer = 0, snapInterval = 3;
     const zBuf = new Float32Array(W);
 
+    // Door + win system
+    let doorPos = null;
+    let gameWon = false;
+    let winTimer = 0;
+    const gameStartTime = Date.now();
+    const DOOR_SPAWN_TIME = 15;
+
+    // Mouse turning
+    const mouseHandler = (e) => {
+      if (document.pointerLockElement === canvas && !dead && !gameWon) {
+        ang += e.movementX * 0.003;
+      }
+    };
+    document.addEventListener('mousemove', mouseHandler);
+    canvas.addEventListener('click', (e) => {
+      e.stopPropagation();
+      canvas.requestPointerLock();
+    });
+
     function cleanup() {
-      bgMusic.pause();
-      bgMusic.currentTime = 0;
+      bgMusic.pause(); bgMusic.currentTime = 0;
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+      document.removeEventListener('mousemove', mouseHandler);
       if(document.body.contains(wrap))document.body.removeChild(wrap);
       if(document.head.contains(s))document.head.removeChild(s);
       if(document.body.contains(btn))document.body.removeChild(btn);
@@ -128,33 +146,190 @@
 
     function drawRect3d(x,y,w,h,dc,lc,mc,depth){oc.fillStyle=mc;oc.fillRect(x,y,w,h);oc.fillStyle=dc;oc.fillRect(x+w,y+depth,depth,h-depth);oc.fillStyle=lc;oc.fillRect(x+depth,y,w-depth,depth);oc.fillStyle=dc;oc.fillRect(x+w,y,depth,depth);}
     function drawFlowers(sx,dist){if(dist>15)return;gt++;updateSnap(dist);const ii=Math.max(0,Math.min(1,(12-dist)/12));const sH=Math.min(H*1.8,(H/dist)*1.3),sW=sH*0.24;const baseTop=(H-sH)/2-sH*0.08,left=sx-sW/2;const hw=Math.max(2,Math.floor(sW)),hh=Math.max(4,Math.floor(sH));const al=Math.min(1,1.4-dist/15);const depth=Math.max(1,Math.floor((3-dist*0.15)*hw*0.18));oc.save();oc.globalAlpha=al;const headH=Math.floor(hh*0.20),headW=Math.floor(hw*snap.scaleX*0.75);const hx=Math.floor(left+(hw-headW)/2+snap.hx),hy=Math.floor(baseTop+snap.hy);drawRect3d(hx,hy,headW,headH,'#1a0000','#330000','#000',depth);oc.fillStyle='rgba(160,0,0,0.6)';oc.fillRect(hx-1,hy-1,headW+2,1);oc.fillRect(hx-1,hy-1,1,headH+2);if(Math.random()<0.12*ii){oc.fillStyle='#f00';oc.fillRect(hx+Math.floor(headW*0.15),hy+Math.floor(headH*0.25),Math.floor(headW*0.22),Math.floor(headH*0.4));oc.fillRect(hx+Math.floor(headW*0.58),hy+Math.floor(headH*0.25),Math.floor(headW*0.22),Math.floor(headH*0.4));}const neckH=Math.floor(hh*0.05),neckX=Math.floor(left+hw*0.32+snap.bx),neckY=hy+headH;oc.fillStyle='#000';oc.fillRect(neckX,neckY,Math.floor(hw*0.35),neckH);oc.fillStyle='#1a0000';oc.fillRect(neckX+Math.floor(hw*0.35),neckY+depth,depth,neckH-depth);const bodyTopY=neckY+neckH+snap.by,bodyH=Math.floor(hh*0.36*snap.scaleY),bodyX=Math.floor(left+snap.bx);drawRect3d(bodyX,bodyTopY,hw,bodyH,'#200000','#3a0000','#000',depth);for(let k=0;k<6;k++){if(Math.random()<0.5*ii){const sy2=bodyTopY+Math.floor(Math.random()*bodyH);const sh2=Math.floor(Math.random()*4)+1;const shift=Math.floor((Math.random()-0.5)*20*ii);oc.fillStyle=Math.random()<0.3?'rgba(255,0,0,0.2)':'rgba(0,0,0,0.9)';oc.fillRect(bodyX+shift,sy2,hw+4,sh2);}}const lArmLen=Math.floor(hh*(0.52+Math.random()*0.1*ii)),lArmW=Math.max(2,Math.floor(hw*0.18));const lArmX=Math.floor(left-lArmW+snap.lax),lArmY=bodyTopY+snap.lay;drawRect3d(lArmX,lArmY,lArmW,lArmLen,'#1a0000','#2a0000','#000',depth);const rArmLen=Math.floor(hh*(0.52+Math.random()*0.1*ii)),rArmW=Math.max(2,Math.floor(hw*0.18));const rArmX=Math.floor(left+hw+snap.rax),rArmY=bodyTopY+snap.ray;drawRect3d(rArmX,rArmY,rArmW,rArmLen,'#1a0000','#2a0000','#000',depth);const legBaseY=bodyTopY+bodyH;const lLegW=Math.max(2,Math.floor(hw*0.32)),lLegH=Math.floor(hh*0.36)+snap.lly,lLegX=Math.floor(left+hw*0.04+snap.llx);drawRect3d(lLegX,legBaseY,lLegW,lLegH,'#1a0000','#2a0000','#000',depth);const rLegW=Math.max(2,Math.floor(hw*0.32)),rLegH=Math.floor(hh*0.36)+snap.rly,rLegX=Math.floor(left+hw*0.58+snap.rlx);drawRect3d(rLegX,legBaseY,rLegW,rLegH,'#1a0000','#2a0000','#000',depth);if(ii>0.2&&Math.random()<0.3){oc.globalAlpha=al*0.15;oc.fillStyle='#f00';const gx2=Math.floor((Math.random()-0.5)*16);oc.fillRect(bodyX+gx2,bodyTopY,hw,bodyH);oc.fillRect(hx+gx2,hy,headW,headH);}if(ii>0.5&&Math.random()<0.4){oc.globalAlpha=al*0.6;oc.fillStyle='rgba(0,0,0,0.95)';const band=Math.floor(baseTop+Math.random()*sH);oc.fillRect(Math.floor(left-5),band,Math.floor(hw+depth+10),Math.floor(Math.random()*5)+1);}oc.restore();}
-    function drawMinimap(){const C=2,P=3,MW=COLS*C,MH=ROWS*C,ox=W-MW-P,oy=P;oc.fillStyle='rgba(0,0,0,0.7)';oc.fillRect(ox-1,oy-1,MW+2,MH+2);for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){oc.fillStyle=map[y][x]===1?'#888':'#111';oc.fillRect(ox+x*C,oy+y*C,C,C);}blink++;oc.fillStyle=Math.floor(blink/5)%2===0?'#f00':'#700';oc.fillRect(ox+Math.floor(ex*C)-1,oy+Math.floor(ey*C)-1,2,2);const fovLen=5;const lx=px+Math.cos(ang-FOV/2)*fovLen,ly=py+Math.sin(ang-FOV/2)*fovLen,rx2=px+Math.cos(ang+FOV/2)*fovLen,ry2=py+Math.sin(ang+FOV/2)*fovLen;oc.fillStyle='rgba(255,255,255,0.07)';oc.beginPath();oc.moveTo(ox+px*C,oy+py*C);oc.lineTo(ox+lx*C,oy+ly*C);oc.lineTo(ox+rx2*C,oy+ry2*C);oc.closePath();oc.fill();oc.strokeStyle='#fff';oc.lineWidth=0.5;oc.beginPath();oc.moveTo(ox+px*C,oy+py*C);oc.lineTo(ox+(px+Math.cos(ang)*3)*C,oy+(py+Math.sin(ang)*3)*C);oc.stroke();oc.fillStyle='#fff';oc.fillRect(ox+Math.floor(px*C)-1,oy+Math.floor(py*C)-1,2,2);}
+
+    function drawDoor(sx, dist) {
+      const sH = Math.min(H * 1.2, (H / dist) * 0.85);
+      const sW = sH * 0.45;
+      const top = (H - sH) / 2;
+      const left = sx - sW / 2;
+      const al = Math.min(1, 1.5 - dist / 15);
+      oc.save();
+      oc.globalAlpha = Math.max(0.3, al);
+      oc.fillStyle = '#2a1500';
+      oc.fillRect(Math.floor(left), Math.floor(top), Math.ceil(sW), Math.ceil(sH));
+      oc.fillStyle = '#7B3F00';
+      oc.fillRect(Math.floor(left+sW*0.06), Math.floor(top+sH*0.02), Math.ceil(sW*0.88), Math.ceil(sH*0.96));
+      oc.fillStyle = '#5a2d00';
+      oc.fillRect(Math.floor(left+sW*0.15), Math.floor(top+sH*0.08), Math.ceil(sW*0.7), Math.ceil(sH*0.38));
+      oc.fillRect(Math.floor(left+sW*0.15), Math.floor(top+sH*0.54), Math.ceil(sW*0.7), Math.ceil(sH*0.38));
+      oc.fillStyle = '#FFD700';
+      oc.fillRect(Math.floor(left+sW*0.72), Math.floor(top+sH*0.44), Math.ceil(sW*0.08), Math.ceil(sH*0.1));
+      if (dist < 4) {
+        oc.globalAlpha = (1 - dist/4) * 0.4;
+        oc.fillStyle = '#00ffaa';
+        oc.fillRect(Math.floor(left), Math.floor(top), Math.ceil(sW), Math.ceil(sH));
+      }
+      oc.restore();
+    }
+
+    function drawMinimap(){
+      const C=2,P=3,MW=COLS*C,MH=ROWS*C,ox=W-MW-P,oy=P;
+      oc.fillStyle='rgba(0,0,0,0.7)';oc.fillRect(ox-1,oy-1,MW+2,MH+2);
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){oc.fillStyle=map[y][x]===1?'#888':'#111';oc.fillRect(ox+x*C,oy+y*C,C,C);}
+      blink++;
+      oc.fillStyle=Math.floor(blink/5)%2===0?'#f00':'#700';
+      oc.fillRect(ox+Math.floor(ex*C)-1,oy+Math.floor(ey*C)-1,2,2);
+      if (doorPos) {
+        oc.fillStyle = Math.floor(blink/6)%2===0 ? '#00ffaa' : '#007744';
+        oc.fillRect(ox+Math.floor(doorPos.x*C)-1,oy+Math.floor(doorPos.y*C)-1,3,3);
+      }
+      const fovLen=5;
+      const lx=px+Math.cos(ang-FOV/2)*fovLen,ly=py+Math.sin(ang-FOV/2)*fovLen,rx2=px+Math.cos(ang+FOV/2)*fovLen,ry2=py+Math.sin(ang+FOV/2)*fovLen;
+      oc.fillStyle='rgba(255,255,255,0.07)';oc.beginPath();oc.moveTo(ox+px*C,oy+py*C);oc.lineTo(ox+lx*C,oy+ly*C);oc.lineTo(ox+rx2*C,oy+ry2*C);oc.closePath();oc.fill();
+      oc.strokeStyle='#fff';oc.lineWidth=0.5;oc.beginPath();oc.moveTo(ox+px*C,oy+py*C);oc.lineTo(ox+(px+Math.cos(ang)*3)*C,oy+(py+Math.sin(ang)*3)*C);oc.stroke();
+      oc.fillStyle='#fff';oc.fillRect(ox+Math.floor(px*C)-1,oy+Math.floor(py*C)-1,2,2);
+    }
+
     function drawAmbientStatic(intensity){if(Math.random()>0.5)return;const total=0.06+intensity*0.22;const id2=sc.createImageData(W,H);const d2=id2.data;for(let k=0;k<W*H;k++){const v=Math.random()<0.5?0:255;d2[k*4]=v;d2[k*4+1]=v;d2[k*4+2]=v;d2[k*4+3]=255;}sc.putImageData(id2,0,0);oc.save();oc.globalAlpha=total;oc.drawImage(sOff,0,0);if(intensity>0.4){oc.globalAlpha=intensity*0.1;for(let k=0;k<Math.floor(intensity*3);k++){const sy=Math.floor(Math.random()*H);oc.drawImage(off,0,sy,W,2,Math.floor((Math.random()-0.5)*6),sy,W,2);}}oc.restore();}
     function drawDeathStatic(){const progress=1-(deathTimer/DEATH_FRAMES);const id2=sc.createImageData(W,H);const d2=id2.data;for(let k=0;k<W*H;k++){const v=Math.random()<0.5?0:255;d2[k*4]=v;d2[k*4+1]=v;d2[k*4+2]=v;d2[k*4+3]=255;}sc.putImageData(id2,0,0);oc.save();oc.globalAlpha=Math.min(1,progress*2.5);oc.drawImage(sOff,0,0);const slices=Math.floor(progress*20);for(let k=0;k<slices;k++){const sy=Math.floor(Math.random()*H);const sh2=Math.floor(Math.random()*6)+1;const shift=Math.floor((Math.random()-0.5)*30*progress);oc.globalAlpha=progress*0.7;oc.drawImage(sOff,0,sy,W,sh2,shift,sy,W,sh2);}if(progress<0.5){oc.globalAlpha=(0.5-progress)*0.6;oc.fillStyle='#f00';oc.fillRect(0,0,W,H);}oc.restore();}
 
-    function raycast(){const hH=H/2;for(let i=0;i<W*H*4;i+=4){buf[i]=20;buf[i+1]=16;buf[i+2]=5;buf[i+3]=255;}for(let y=0;y<H;y++){const isFloor=y>hH;const rowDist=isFloor?(H/(2*y-H+0.0001)):(H/(H-2*y+0.0001));const floorStepX=rowDist*(Math.cos(ang+FOV/2)-Math.cos(ang-FOV/2))/W;const floorStepY=rowDist*(Math.sin(ang+FOV/2)-Math.sin(ang-FOV/2))/W;let floorX=px+rowDist*Math.cos(ang-FOV/2);let floorY=py+rowDist*Math.sin(ang-FOV/2);const dimFactor=isFloor?0.55:0.72;const fogFactor=Math.min(1,rowDist*0.12);for(let x=0;x<W;x++){const shade=dimFactor*(1-fogFactor*0.7);const idx=(y*W+x)*4;buf[idx]=Math.floor((isFloor?80:200)*shade);buf[idx+1]=Math.floor((isFloor?65:195)*shade);buf[idx+2]=Math.floor((isFloor?25:175)*shade);buf[idx+3]=255;floorX+=floorStepX;floorY+=floorStepY;}}for(let x=0;x<W;x++){const ra=ang-FOV/2+(FOV*x/W);const ca=Math.cos(ra),sa=Math.sin(ra);const mapX0=Math.floor(px),mapY0=Math.floor(py);const ddx=Math.abs(1/(ca||1e-10)),ddy=Math.abs(1/(sa||1e-10));let stepX,stepY,sideDistX,sideDistY;if(ca<0){stepX=-1;sideDistX=(px-mapX0)*ddx;}else{stepX=1;sideDistX=(mapX0+1-px)*ddx;}if(sa<0){stepY=-1;sideDistY=(py-mapY0)*ddy;}else{stepY=1;sideDistY=(mapY0+1-py)*ddy;}let mx=mapX0,my=mapY0,side=0,hit=false;for(let s=0;s<40&&!hit;s++){if(sideDistX<sideDistY){sideDistX+=ddx;mx+=stepX;side=0;}else{sideDistY+=ddy;my+=stepY;side=1;}if(mx<0||my<0||mx>=COLS||my>=ROWS||map[my][mx]===1)hit=true;}let dist=side===0?(mx-px+(1-stepX)/2)/ca:(my-py+(1-stepY)/2)/sa;dist=Math.max(0.05,dist);zBuf[x]=dist;let u=0;if(side===0){u=py+dist*sa;u-=Math.floor(u);}else{u=px+dist*ca;u-=Math.floor(u);}if((side===0&&ca>0)||(side===1&&sa<0))u=1-u;const wH=Math.min(H,(H/dist)*0.9);const top=Math.max(0,Math.floor(hH-wH/2));const bot=Math.min(H-1,Math.floor(hH+wH/2));const shadeFactor=Math.min(1,1.0/(dist*0.5+0.35))*(side===1?0.72:1.0);const fog=Math.min(1,dist*0.09);for(let y=top;y<=bot;y++){const v=(y-hH+wH/2)/wH;const tx=((Math.floor(u*TEX_W)%TEX_W)+TEX_W)%TEX_W;const ty=((Math.floor(v*TEX_H)%TEX_H)+TEX_H)%TEX_H;const ti=(ty*TEX_W+tx)*3;const shade=shadeFactor*(1-fog*0.8);const idx=(y*W+x)*4;buf[idx]=Math.floor(wallTex[ti]*shade);buf[idx+1]=Math.floor(wallTex[ti+1]*shade);buf[idx+2]=Math.floor(wallTex[ti+2]*shade);buf[idx+3]=255;}if(top>0&&top<H){const ls=180;const ti2=top*W*4+x*4;const bi2=bot*W*4+x*4;buf[ti2]=Math.min(255,buf[ti2]+ls);buf[ti2+1]=Math.min(255,buf[ti2+1]+Math.floor(ls*0.94));buf[ti2+2]=Math.min(255,buf[ti2+2]+Math.floor(ls*0.7));buf[bi2]=Math.min(255,buf[bi2]+Math.floor(ls*0.5));buf[bi2+1]=Math.min(255,buf[bi2+1]+Math.floor(ls*0.47));buf[bi2+2]=Math.min(255,buf[bi2+2]+Math.floor(ls*0.35));}}imgData.data.set(buf);oc.putImageData(imgData,0,0);if(!dead){const edx=ex-px,edy=ey-py,eDist=Math.hypot(edx,edy);const eRA=Math.atan2(edy,edx)-ang,eN=Math.atan2(Math.sin(eRA),Math.cos(eRA));if(Math.abs(eN)<FOV/2+0.1){const spx=Math.floor((eN/(FOV/2)+1)/2*W),cd=eDist*Math.cos(eRA);if(cd>0&&cd<zBuf[Math.max(0,Math.min(W-1,spx))])drawFlowers(spx,cd);}const dist2=Math.hypot(px-ex,py-ey);sint=Math.max(0,Math.min(1,(8-dist2)/8));sint=sint*sint*0.5;drawAmbientStatic(sint);}else{drawDeathStatic();}oc.fillStyle='rgba(255,255,255,0.5)';oc.fillRect(W/2-1,H/2-1,3,3);if(!dead)drawMinimap();ctx.imageSmoothingEnabled=false;ctx.drawImage(off,0,0,canvas.width,canvas.height);}
+    function raycast(){
+      if (gameWon) {
+        oc.fillStyle = '#000';
+        oc.fillRect(0, 0, W, H);
+        oc.fillStyle = 'rgba(0,200,100,0.9)';
+        oc.fillRect(W*0.1, H*0.25, W*0.8, H*0.5);
+        oc.fillStyle = '#fff';
+        oc.font = 'bold 10px monospace';
+        oc.textAlign = 'center';
+        oc.fillText('YOU ESCAPED!', W/2, H/2 - 4);
+        oc.font = '6px monospace';
+        oc.fillStyle = '#cfc';
+        oc.fillText('closing...', W/2, H/2 + 8);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+        return;
+      }
+
+      const hH=H/2;
+      for(let i=0;i<W*H*4;i+=4){buf[i]=20;buf[i+1]=16;buf[i+2]=5;buf[i+3]=255;}
+      for(let y=0;y<H;y++){
+        const isFloor=y>hH;
+        const rowDist=isFloor?(H/(2*y-H+0.0001)):(H/(H-2*y+0.0001));
+        const floorStepX=rowDist*(Math.cos(ang+FOV/2)-Math.cos(ang-FOV/2))/W;
+        const floorStepY=rowDist*(Math.sin(ang+FOV/2)-Math.sin(ang-FOV/2))/W;
+        let floorX=px+rowDist*Math.cos(ang-FOV/2);
+        let floorY=py+rowDist*Math.sin(ang-FOV/2);
+        const dimFactor=isFloor?0.55:0.72;
+        const fogFactor=Math.min(1,rowDist*0.12);
+        for(let x=0;x<W;x++){
+          const shade=dimFactor*(1-fogFactor*0.7);
+          const idx=(y*W+x)*4;
+          buf[idx]=Math.floor((isFloor?80:200)*shade);
+          buf[idx+1]=Math.floor((isFloor?65:195)*shade);
+          buf[idx+2]=Math.floor((isFloor?25:175)*shade);
+          buf[idx+3]=255;
+          floorX+=floorStepX;floorY+=floorStepY;
+        }
+      }
+      for(let x=0;x<W;x++){
+        const ra=ang-FOV/2+(FOV*x/W);const ca=Math.cos(ra),sa=Math.sin(ra);
+        const mapX0=Math.floor(px),mapY0=Math.floor(py);
+        const ddx=Math.abs(1/(ca||1e-10)),ddy=Math.abs(1/(sa||1e-10));
+        let stepX,stepY,sideDistX,sideDistY;
+        if(ca<0){stepX=-1;sideDistX=(px-mapX0)*ddx;}else{stepX=1;sideDistX=(mapX0+1-px)*ddx;}
+        if(sa<0){stepY=-1;sideDistY=(py-mapY0)*ddy;}else{stepY=1;sideDistY=(mapY0+1-py)*ddy;}
+        let mx=mapX0,my=mapY0,side=0,hit=false;
+        for(let ss=0;ss<40&&!hit;ss++){if(sideDistX<sideDistY){sideDistX+=ddx;mx+=stepX;side=0;}else{sideDistY+=ddy;my+=stepY;side=1;}if(mx<0||my<0||mx>=COLS||my>=ROWS||map[my][mx]===1)hit=true;}
+        let dist=side===0?(mx-px+(1-stepX)/2)/ca:(my-py+(1-stepY)/2)/sa;
+        dist=Math.max(0.05,dist);zBuf[x]=dist;
+        let u=0;
+        if(side===0){u=py+dist*sa;u-=Math.floor(u);}else{u=px+dist*ca;u-=Math.floor(u);}
+        if((side===0&&ca>0)||(side===1&&sa<0))u=1-u;
+        const wH=Math.min(H,(H/dist)*0.9);
+        const top=Math.max(0,Math.floor(hH-wH/2));
+        const bot=Math.min(H-1,Math.floor(hH+wH/2));
+        const shadeFactor=Math.min(1,1.0/(dist*0.5+0.35))*(side===1?0.72:1.0);
+        const fog=Math.min(1,dist*0.09);
+        for(let y=top;y<=bot;y++){const v=(y-hH+wH/2)/wH;const tx=((Math.floor(u*TEX_W)%TEX_W)+TEX_W)%TEX_W;const ty=((Math.floor(v*TEX_H)%TEX_H)+TEX_H)%TEX_H;const ti=(ty*TEX_W+tx)*3;const shade=shadeFactor*(1-fog*0.8);const idx=(y*W+x)*4;buf[idx]=Math.floor(wallTex[ti]*shade);buf[idx+1]=Math.floor(wallTex[ti+1]*shade);buf[idx+2]=Math.floor(wallTex[ti+2]*shade);buf[idx+3]=255;}
+        if(top>0&&top<H){const ls=180;const ti2=top*W*4+x*4;const bi2=bot*W*4+x*4;buf[ti2]=Math.min(255,buf[ti2]+ls);buf[ti2+1]=Math.min(255,buf[ti2+1]+Math.floor(ls*0.94));buf[ti2+2]=Math.min(255,buf[ti2+2]+Math.floor(ls*0.7));buf[bi2]=Math.min(255,buf[bi2]+Math.floor(ls*0.5));buf[bi2+1]=Math.min(255,buf[bi2+1]+Math.floor(ls*0.47));buf[bi2+2]=Math.min(255,buf[bi2+2]+Math.floor(ls*0.35));}
+      }
+      imgData.data.set(buf);oc.putImageData(imgData,0,0);
+
+      if(!dead){
+        const edx=ex-px,edy=ey-py,eDist=Math.hypot(edx,edy);
+        const eRA=Math.atan2(edy,edx)-ang,eN=Math.atan2(Math.sin(eRA),Math.cos(eRA));
+        if(Math.abs(eN)<FOV/2+0.1){const spx=Math.floor((eN/(FOV/2)+1)/2*W),cd=eDist*Math.cos(eRA);if(cd>0&&cd<zBuf[Math.max(0,Math.min(W-1,spx))])drawFlowers(spx,cd);}
+        const dist2=Math.hypot(px-ex,py-ey);sint=Math.max(0,Math.min(1,(8-dist2)/8));sint=sint*sint*0.5;
+        drawAmbientStatic(sint);
+      } else { drawDeathStatic(); }
+
+      // Door sprite
+      if (doorPos && !dead) {
+        const ddx=doorPos.x-px,ddy=doorPos.y-py;
+        const dDist=Math.hypot(ddx,ddy);
+        const dRA=Math.atan2(ddy,ddx)-ang,dN=Math.atan2(Math.sin(dRA),Math.cos(dRA));
+        if(Math.abs(dN)<FOV/2+0.1){
+          const dspx=Math.floor((dN/(FOV/2)+1)/2*W);
+          const cd=dDist*Math.cos(dRA);
+          if(cd>0&&cd<zBuf[Math.max(0,Math.min(W-1,dspx))])drawDoor(dspx,cd);
+        }
+      }
+
+      // HUD timer
+      const elapsed=(Date.now()-gameStartTime)/1000;
+      oc.font='5px monospace';oc.textAlign='left';
+      oc.fillStyle='rgba(0,0,0,0.5)';oc.fillRect(1,1,50,8);
+      if(!doorPos){
+        const remaining=Math.ceil(Math.max(0,DOOR_SPAWN_TIME-elapsed));
+        oc.fillStyle='#aaa';oc.fillText('DOOR IN: '+remaining+'s',2,7);
+      } else {
+        oc.fillStyle='#00ffaa';oc.fillText('FIND THE DOOR!',2,7);
+      }
+
+      oc.fillStyle='rgba(255,255,255,0.5)';oc.fillRect(W/2-1,H/2-1,3,3);
+      if(!dead)drawMinimap();
+      ctx.imageSmoothingEnabled=false;ctx.drawImage(off,0,0,canvas.width,canvas.height);
+    }
 
     function update(delta){
+      if(gameWon){winTimer-=delta;if(winTimer<=0)cleanup();return;}
       if(dead){deathTimer-=delta;gt++;if(deathTimer<=0)cleanup();return;}
+
       const mx=Math.cos(ang)*SP*delta,my=Math.sin(ang)*SP*delta;
       if(keys['ArrowUp']||keys['w']||keys['W']){const p=tryMove(px,py,px+mx,py+my);px=p.x;py=p.y;}
       if(keys['ArrowDown']||keys['s']||keys['S']){const p=tryMove(px,py,px-mx,py-my);px=p.x;py=p.y;}
-      if(keys['ArrowLeft']||keys['a']||keys['A'])ang-=TR*delta;
-      if(keys['ArrowRight']||keys['d']||keys['D'])ang+=TR*delta;
       moveE(delta);
+
+      // Spawn door after 15s
+      if(!doorPos){
+        const elapsed=(Date.now()-gameStartTime)/1000;
+        if(elapsed>=DOOR_SPAWN_TIME){
+          const openCells=[];
+          for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++)
+            if(map[y][x]===0&&Math.hypot(x+0.5-px,y+0.5-py)>4)
+              openCells.push({x:x+0.5,y:y+0.5});
+          if(openCells.length)doorPos=openCells[Math.floor(Math.random()*openCells.length)];
+        }
+      }
+
+      // Win check
+      if(doorPos&&Math.hypot(px-doorPos.x,py-doorPos.y)<0.7){
+        gameWon=true;winTimer=180;
+      }
+
       const dist=Math.hypot(px-ex,py-ey);
       const raw=Math.max(0,Math.min(1,(8-dist)/8));sint=raw*raw*0.5;
       const w=document.getElementById('warn');
-      if(w){if(dist<2)w.textContent='HEAR THE WHISTLE?';else if(dist<4)w.textContent='COVER YOUR EARS...';else if(dist<7)w.textContent='פרחים IS NEAR';else w.textContent='';}
+      if(w){if(dist<2)w.textContent='ITS TOO LATE...';else if(dist<4)w.textContent='R U N';else if(dist<7)w.textContent='IT IS NEAR';else w.textContent='';}
     }
 
-    let lastTime = 0;
+    let lastTime=0;
     function loop(ts){
       if(!document.body.contains(wrap))return;
       const delta=Math.min((ts-lastTime)/16.67,3);
       lastTime=ts;
-      update(delta);
-      raycast();
+      update(delta);raycast();
       requestAnimationFrame(loop);
     }
 
@@ -189,5 +364,5 @@
       showBg();
     }
   });
-  })();
+})();
 })();
